@@ -357,7 +357,15 @@
                             <span>Population Size</span>
                             <span id="populationSizeValue">2500</span>
                         </div>
-                        <input type="range" id="populationSize" min="500" max="5000" value="2500">
+                        <input type="range" id="populationSize" min="50" max="5000" value="2500">
+                    </div>
+                    
+                    <div class="slider-container">
+                        <div class="slider-label">
+                            <span>Initial Infected</span>
+                            <span id="initialInfectedValue">5</span>
+                        </div>
+                        <input type="range" id="initialInfected" min="1" max="100" value="5">
                     </div>
                     
                     <div class="slider-container">
@@ -394,6 +402,22 @@
                             <span id="mortalityRateValue">10%</span>
                         </div>
                         <input type="range" id="mortalityRate" min="0" max="100" value="10">
+                    </div>
+                    
+                    <div class="slider-container">
+                        <div class="slider-label">
+                            <span>Reinfection Rate</span>
+                            <span id="reinfectionRateValue">10%</span>
+                        </div>
+                        <input type="range" id="reinfectionRate" min="0" max="100" value="10">
+                    </div>
+                    
+                    <div class="slider-container">
+                        <div class="slider-label">
+                            <span>Immunity Period</span>
+                            <span id="immunityPeriodValue">30 days</span>
+                        </div>
+                        <input type="range" id="immunityPeriod" min="0" max="100" value="30">
                     </div>
                 </div>
                 
@@ -465,10 +489,16 @@
             <p>This simulator demonstrates how viruses spread through a population and how different interventions can affect transmission dynamics. Each dot represents an individual who can be in one of four states: healthy (green), infected (red), recovered (blue), or deceased (gray).</p>
             <p>Adjust the parameters to see how infection rates, recovery times, and mortality rates impact the outbreak. Toggle intervention measures like mask wearing, social distancing, and vaccination to observe their effects on flattening the curve.</p>
             <p>The graph shows the progression of the outbreak over time, helping visualize concepts like herd immunity and the impact of public health measures.</p>
+            <p><strong>New Features:</strong></p>
+            <ul>
+                <li>Recovered individuals now have temporary immunity for a configurable period</li>
+                <li>Dot sizes automatically adjust based on population size</li>
+                <li>Control the number of initially infected individuals</li>
+            </ul>
         </div>
         
         <footer>
-            <p>Virus Outbreak Simulator | Educational Tool for Understanding Epidemiology</p>
+            <p>Virus Outbreak Simulator</p>
         </footer>
     </div>
 
@@ -496,7 +526,7 @@
         let day = 0;
         let infectionData = [];
         let populationSize = 2500;
-        const PERSON_RADIUS = 5;
+        let initialInfectedCount = 5;
         let simulationSpeed = 5; // 1-10 scale
         let frameCounter = 0;
         
@@ -505,24 +535,41 @@
             infectionRate: 0.4,
             recoveryTime: 14,
             mortalityRate: 0.1,
+            reinfectionRate: 0.1,
+            immunityPeriod: 30,
             maskWearing: false,
             socialDistancing: false,
             vaccination: false,
             compliance: 0.7
         };
         
+        // Function to calculate adaptive person radius based on population size
+        function getPersonRadius(popSize) {
+            const baseRadius = 5; // Default radius for populations up to 1500
+            if (popSize <= 1500) {
+                return baseRadius;
+            } else {
+                // Gradually decrease radius for populations above 1500
+                // Every 1000 people above 1500 reduces radius by 1px
+                const reduction = Math.floor((popSize - 1500) / 1000);
+                return Math.max(1, baseRadius - reduction); // Minimum radius of 1px
+            }
+        }
+        
         // Person class
         class Person {
-            constructor(x, y) {
+            constructor(x, y, radius) {
                 this.x = x;
                 this.y = y;
                 this.vx = (Math.random() - 0.5) * 2;
                 this.vy = (Math.random() - 0.5) * 2;
-                this.radius = PERSON_RADIUS;
+                this.radius = radius;
                 this.state = 'healthy'; // healthy, infected, recovered, deceased
                 this.infectionDay = 0;
+                this.recoveryDay = 0;
                 this.compliant = Math.random() < params.compliance;
                 this.color = this.getColor();
+                this.immunityDays = params.immunityPeriod; // Period of immunity after recovery
             }
             
             getColor() {
@@ -567,7 +614,18 @@
                             this.state = 'deceased';
                         } else {
                             this.state = 'recovered';
+                            this.recoveryDay = day;
                         }
+                        this.color = this.getColor();
+                    }
+                }
+                
+                // Check for loss of immunity in recovered individuals
+                if (this.state === 'recovered') {
+                    const daysSinceRecovery = day - this.recoveryDay;
+                    if (daysSinceRecovery > this.immunityDays) {
+                        // Person loses immunity and can be infected again
+                        this.state = 'healthy';
                         this.color = this.getColor();
                     }
                 }
@@ -579,12 +637,37 @@
                 simCtx.fillStyle = this.color;
                 simCtx.fill();
                 
-                // Draw mask if enabled and compliant
-                if (params.maskWearing && this.compliant && this.state !== 'deceased') {
+                // Draw mask if enabled and compliant (only if radius is large enough)
+                if (params.maskWearing && this.compliant && this.state !== 'deceased' && this.radius >= 3) {
                     simCtx.beginPath();
                     simCtx.arc(this.x, this.y + 2, this.radius * 0.6, 0, Math.PI * 2);
                     simCtx.fillStyle = '#FFFFFF';
                     simCtx.fill();
+                }
+                
+                // Draw immunity indicator for recovered individuals (only if radius is large enough)
+                if (this.state === 'recovered' && this.radius >= 3) {
+                    const daysSinceRecovery = day - this.recoveryDay;
+                    const immunityRemaining = this.immunityDays - daysSinceRecovery;
+                    
+                    if (immunityRemaining > 0) {
+                        // Draw a subtle ring around recovered individuals to show immunity
+                        simCtx.beginPath();
+                        simCtx.arc(this.x, this.y, this.radius + 2, 0, Math.PI * 2);
+                        simCtx.strokeStyle = 'rgba(33, 150, 243, 0.5)';
+                        simCtx.lineWidth = 1;
+                        simCtx.stroke();
+                        
+                        // Show immunity percentage as text for a few individuals (not all to avoid clutter)
+                        if (Math.random() < 0.05 && this.radius >= 4) { // Only show for 5% of recovered individuals and if radius is large enough
+                            const immunityPercent = Math.max(0, (immunityRemaining / this.immunityDays) * 100);
+                            simCtx.fillStyle = 'white';
+                            simCtx.font = '8px Arial';
+                            simCtx.textAlign = 'center';
+                            simCtx.fillText(`${Math.round(immunityPercent)}%`, this.x, this.y - 10);
+                            simCtx.textAlign = 'left';
+                        }
+                    }
                 }
             }
             
@@ -606,6 +689,24 @@
                         this.infectionDay = day;
                         this.color = this.getColor();
                     }
+                } else if (this.state === 'recovered') {
+                    // Check if person still has immunity
+                    const daysSinceRecovery = day - this.recoveryDay;
+                    if (daysSinceRecovery <= this.immunityDays) {
+                        return; // Still immune, cannot be infected
+                    }
+                    
+                    // Recovered individuals can be reinfected at a different rate
+                    let actualReinfectionRate = params.reinfectionRate;
+                    if (params.maskWearing && this.compliant) {
+                        actualReinfectionRate *= 0.5; // 50% reduction with masks
+                    }
+                    
+                    if (Math.random() < actualReinfectionRate) {
+                        this.state = 'infected';
+                        this.infectionDay = day;
+                        this.color = this.getColor();
+                    }
                 }
             }
         }
@@ -616,17 +717,26 @@
             day = 0;
             infectionData = [];
             
+            // Calculate adaptive radius based on population size
+            const personRadius = getPersonRadius(populationSize);
+            
             for (let i = 0; i < populationSize; i++) {
-                const x = Math.random() * (simCanvas.width - PERSON_RADIUS * 2) + PERSON_RADIUS;
-                const y = Math.random() * (simCanvas.height - PERSON_RADIUS * 2) + PERSON_RADIUS;
-                population.push(new Person(x, y));
+                const x = Math.random() * (simCanvas.width - personRadius * 2) + personRadius;
+                const y = Math.random() * (simCanvas.height - personRadius * 2) + personRadius;
+                population.push(new Person(x, y, personRadius));
             }
             
-            // Infect one person to start at day 0
-            const patientZero = population[Math.floor(Math.random() * population.length)];
-            patientZero.state = 'infected';
-            patientZero.infectionDay = 0;
-            patientZero.color = patientZero.getColor();
+            // Infect initial number of people
+            let infectedCount = 0;
+            while (infectedCount < initialInfectedCount && infectedCount < populationSize) {
+                const randomPerson = population[Math.floor(Math.random() * population.length)];
+                if (randomPerson.state === 'healthy') {
+                    randomPerson.state = 'infected';
+                    randomPerson.infectionDay = 0;
+                    randomPerson.color = randomPerson.getColor();
+                    infectedCount++;
+                }
+            }
             
             updateStats();
             drawSimulation();
@@ -671,6 +781,17 @@
             simCtx.fillStyle = 'white';
             simCtx.font = '16px Arial';
             simCtx.fillText(`Day: ${day}`, 10, 25);
+            
+            // Show simulation status
+            if (!simulationRunning && day > 0) {
+                simCtx.fillStyle = 'white';
+                simCtx.font = 'bold 20px Arial';
+                simCtx.textAlign = 'center';
+                simCtx.fillText('Simulation Complete', simCanvas.width / 2, simCanvas.height / 2);
+                simCtx.font = '16px Arial';
+                simCtx.fillText('No more infected individuals', simCanvas.width / 2, simCanvas.height / 2 + 30);
+                simCtx.textAlign = 'left';
+            }
         }
         
         // Draw graph
@@ -775,7 +896,11 @@
             day++;
             
             // Update each person
-            population.forEach(person => person.update());
+            population.forEach(person => {
+                // Update immunity period if parameter changed
+                person.immunityDays = params.immunityPeriod;
+                person.update();
+            });
             
             // Check for infections
             for (let i = 0; i < population.length; i++) {
@@ -790,7 +915,7 @@
                         const dy = personA.y - personB.y;
                         const distance = Math.sqrt(dx * dx + dy * dy);
                         
-                        if (distance < PERSON_RADIUS * 2.5) {
+                        if (distance < (personA.radius + personB.radius) * 1.25) {
                             personB.infect();
                         }
                     }
@@ -801,7 +926,7 @@
             drawSimulation();
             drawGraph();
             
-            // Check if simulation should end
+            // Check if simulation should end when infected count reaches 0
             const infectedCount = population.filter(p => p.state === 'infected').length;
             if (infectedCount === 0) {
                 simulationRunning = false;
@@ -813,6 +938,12 @@
         document.getElementById('populationSize').addEventListener('input', function() {
             populationSize = parseInt(this.value);
             document.getElementById('populationSizeValue').textContent = this.value;
+            initializePopulation();
+        });
+        
+        document.getElementById('initialInfected').addEventListener('input', function() {
+            initialInfectedCount = parseInt(this.value);
+            document.getElementById('initialInfectedValue').textContent = this.value;
             initializePopulation();
         });
         
@@ -836,6 +967,16 @@
         document.getElementById('mortalityRate').addEventListener('input', function() {
             params.mortalityRate = this.value / 100;
             document.getElementById('mortalityRateValue').textContent = `${this.value}%`;
+        });
+        
+        document.getElementById('reinfectionRate').addEventListener('input', function() {
+            params.reinfectionRate = this.value / 100;
+            document.getElementById('reinfectionRateValue').textContent = `${this.value}%`;
+        });
+        
+        document.getElementById('immunityPeriod').addEventListener('input', function() {
+            params.immunityPeriod = parseInt(this.value);
+            document.getElementById('immunityPeriodValue').textContent = `${this.value} days`;
         });
         
         document.getElementById('maskWearing').addEventListener('change', function() {
